@@ -1,0 +1,451 @@
+ 
+                      ;=======================================================
+                      ;=======================================================
+                      ;  6309 SOC mini monitor
+                      ;=======================================================
+                      ;=======================================================
+ 
+                      DEBUG EQU 0
+ 
+                      ;=======================================================
+                      ; Defines
+                      ;=======================================================
+ 
+                      ; UART register addresses
+                      ;
+                      UARTCNTL      EQU    $0000
+                      UARTBSR0      EQU    $0001
+                      UARTBSR1      EQU    $0002
+                      UARTSTAT      EQU    $0003
+                      UARTMASK      EQU    $0004
+                      UARTDATA      EQU    $0005
+ 
+                      ; UART baud rate
+                      ;
+                      BAUD0         EQU    $e3     ; 115200
+                      BAUD1         EQU    $78     ; 115200
+ 
+                      ; UART status register bit definitions
+                      ;
+                      FRAMINGERROR  EQU    $40
+                      PARITYERROR   EQU    $20
+                      OVERRUNERR    EQU    $10
+                      TXFIFOEMPTY   EQU    $08
+                      TXNOTFULL     EQU    $04
+                      RXFIFOFULL    EQU    $02
+                      RXNOTEMPTY    EQU    $01
+ 
+                      ; TIMER register addresses
+                      ;
+                      TIMRCNTL      EQU    $0008
+                      TIMRSTAT      EQU    $0008
+                      TIMRICL       EQU    $0009
+                      TIMRICH       EQU    $000A
+ 
+                      TIME0         EQU    $88     ; 5 seconds
+                      TIME1         EQU    $13     ; 5 seconds
+                      TMSTART       EQU    $01     ; start timer
+ 
+                      TMDONE        EQU    $04     ; timer done
+                      TMSTOP        EQU    $00     ; stop timer
+ 
+                      ; Other register address
+                      ;
+                      OPORTA        EQU    $000C   ; port A
+                      IMASK         EQU    $000D   ; interrupt mask
+                      RANDCNTL      EQU    $000E   ; random number start/stop
+                      RANDMASK      EQU    $000F   ; random number mask
+                      RANDDATA      EQU    $000F   ; random number
+                      ISRC          EQU    $0010   ; interrupt source
+ 
+                      ; Initial Stack Pointer
+                      ;
+                      USTKTOP        EQU    $FFF0
+                      SSTKTOP        EQU    $FEF0
+ 
+                      ;=======================================================
+                      ; Page Zero
+                      ;=======================================================
+                                ORG   $F000
+ 
+ F000 0D0A            BANNER:   FCB   $0D,$0A
+ F002 57656C636F6D65            FCB   "Welcome to 6309 Monitor"
+ F009 20746F20363330
+ F010 39204D6F6E6974
+ F017 6F72
+ F019 0D0A00          CRLF:     FCB   $0D,$0A,0
+ 
+ F01C 0D0A3E2000      PROMPT:   FCB   $0D,$0A,"> ",0
+ 
+ F021 0D0A0D0A        HELPMSG:  FCB   $0D,$0A,$0D,$0A
+ F025 436F6D6D616E64            FCB   "Command Summary:",$0D,$0A
+ F02C 2053756D6D6172
+ F033 793A0D0A
+ F037 68202020202020            FCB   "h      .. print this help 
+message",$0D,$0A
+ F03E 2E2E207072696E
+ F045 74207468697320
+ F04C 68656C70206D65
+ F053 73736167650D0A
+ F05A 63202020202020            FCB   "c      .. clear screen",$0D,$0A
+ F061 2E2E20636C6561
+ F068 72207363726565
+ F06F 6E0D0A
+ F072 72202020202020            FCB   "r      .. soft reset",$0D,$0A
+ F079 2E2E20736F6674
+ F080 2072657365740D
+ F087 0A
+ F088 6F202020202020            FCB   "o      .. toggle output port",$0D,$0A
+ F08F 2E2E20746F6767
+ F096 6C65206F757470
+ F09D 757420706F7274
+ F0A4 0D0A
+ F0A6 67206164647220            FCB   "g addr .. jump to address",$0D,$0A
+ F0AD 2E2E206A756D70
+ F0B4 20746F20616464
+ F0BB 726573730D0A
+ F0C1 64206164647220            FCB   "d addr .. dump mem at address",$0D,$0A
+ F0C8 2E2E2064756D70
+ F0CF 206D656D206174
+ F0D6 20616464726573
+ F0DD 730D0A
+ F0E0 0D0A00                    FCB   $0D,$0A,0
+ 
+ F0E3 0D0A            UNKNOWN:  FCB   $0D,$0A
+ F0E5 556E6B6E6F776E            FCB   "Unknown Command"
+ F0EC 20436F6D6D616E
+ F0F3 64
+ F0F4 0D0A00                    FCB   $0D,$0A,0
+ 
+ F0F7 1B5B324A        CLEARSCR: FCB   $1B,$5B,$32,$4A
+ F0FB 1B5B313B314800            FCB   $1B,$5B,$31,$3B,$31,$48,0
+ 
+ F102 000000000000    BUFFER    FCB   0,0,0,0,0,0
+ F108 00              TEMP2     FCB   0
+ F109 00              TEMP1     FCB   0
+ F10A 000000000000    ZEROS     FCB   0,0,0,0,0,0
+ 
+                      ;=======================================================
+                      ; Start Point
+                      ;=======================================================
+ 
+ F110 10CEFEF0        START:    LDS   #SSTKTOP    ;; Init the system SP
+ F114 CEFFF0                    LDU   #USTKTOP    ;; Init the user   SP
+ F117 BDF175                    JSR   INITUART    ;; Initialize UART
+ F11A 8EF000                    LDX   #BANNER     ;; hello message
+ F11D BDF182                    JSR   PUTS
+ 
+ F120 8EF01C          MAIN:     LDX   #PROMPT     ;; send prompt
+ F123 BDF182                    JSR   PUTS
+ F126 BDF19D                    JSR   GETC        ;; get a char
+ F129 BDF190                    JSR   PUTC        ;; put a char
+ F12C BDF26B                    JSR   TOUPPER     ;; to upper case
+ 
+ F12F 8148                      CMPA  #'H'        ;; help
+ F131 271E                      BEQ   CMD_HELP
+ 
+ F133 8143                      CMPA  #'C'        ;; clear screen
+ F135 2722                      BEQ   CMD_CLR
+ 
+ F137 8152                      CMPA  #'R'        ;; restart
+ F139 27D5                      BEQ   START
+ 
+ F13B 814F                      CMPA  #'O'        ;; output to port
+ F13D 2722                      BEQ   CMD_OUT
+ 
+ F13F 8147                      CMPA  #'G'        ;; goto address
+ F141 2722                      BEQ   CMD_GOTO
+ 
+ F143 8144                      CMPA  #'D'        ;; dump memory
+ F145 2726                      BEQ   CMD_DUMP
+ 
+ F147 810D                      CMPA  #$0D        ;; enter key
+ F149 27D5                      BEQ   MAIN
+ 
+ F14B 8EF0E3          CMD_NONE: LDX   #UNKNOWN    ;; unknown command
+ F14E BDF182                    JSR   PUTS
+ 
+ F151 8EF021          CMD_HELP: LDX   #HELPMSG    ;; help message
+ F154 BDF182                    JSR   PUTS
+ F157 20C7                      BRA   MAIN        ;; goto main loop
+ 
+ F159 8EF0F7          CMD_CLR:  LDX   #CLEARSCR   ;; clear the screen
+ F15C BDF182                    JSR   PUTS
+ F15F 20BF                      BRA   MAIN        ;; goto main loop
+ 
+ F161 0C0C            CMD_OUT:  INC   OPORTA      ;; blink LED
+ F163 20BB                      BRA   MAIN        ;; goto main loop
+ 
+ F165 BDF1CD          CMD_GOTO: JSR   GETADDR     ;; get  address
+ F168 BEF102                    LDX   BUFFER      ;; 16-bit address
+ F16B 6E84                      JMP   ,X          ;; goto address
+ 
+ F16D BDF1CD          CMD_DUMP: JSR   GETADDR     ;; get  address
+ F170 BDF21E                    JSR   DUMPMEM     ;; dump memory
+ F173 20AB                      BRA   MAIN        ;; goto main loop
+ 
+ 
+                      ;=======================================================
+                      ; Initialize the UART
+                      ;   inputs  : none
+                      ;   outputs : none
+                      ;   destroys: A
+                      ;=======================================================
+ F175 86E3            INITUART: LDA  #BAUD0       ;; baud rate
+ F177 9701                      STA  UARTBSR0
+ F179 8678                      LDA  #BAUD1
+ F17B 9702                      STA  UARTBSR1
+ F17D 8603                      LDA  #$03         ;; enable TX and RX
+ F17F 9700                      STA  UARTCNTL
+ F181 39                        RTS
+                       
+                      ;=======================================================
+                      ; Send a string to the UART
+                      ;   inputs : X contains pointer to string
+                      ;   outputs: X points to null
+                      ;=======================================================
+ F182 3602            PUTS:     PSHU A           ;; save A
+ F184 A680            PUTLOOP:  LDA  ,X+         ;; load A with next char
+ F186 2705                      BEQ  PUTDONE     ;; exit if done
+ F188 BDF190                    JSR  PUTC        ;; put a character
+ F18B 20F7                      BRA  PUTLOOP     ;; repeat
+ F18D 3702            PUTDONE:  PULU A           ;; restore A
+ F18F 39                        RTS
+ 
+                      ;=======================================================
+                      ; Send a single character to the UART
+                      ;=======================================================
+ F190 3602            PUTC:     PSHU A            ;; save A
+ F192 9603            TXFULL:   LDA  UARTSTAT     ;; get TX UART status
+ F194 8404                      ANDA #TXNOTFULL   ;; TX FIFO full?
+ F196 27FA                      BEQ  TXFULL       ;; wait if full
+ F198 3702                      PULU A            ;; restore A
+ F19A 9705                      STA  UARTDATA     ;; put a character
+ F19C 39                        RTS
+ 
+                      ;=======================================================
+                      ; Get a single character from the UART
+                      ;   inputs:  none
+                      ;   outputs: A contains received character
+                      ;=======================================================
+ F19D 9603            GETC:     LDA  UARTSTAT     ;; get RX UART status
+ F19F 8401                      ANDA #RXNOTEMPTY  ;; RX FIFO empty?
+ F1A1 27FA                      BEQ  GETC         ;; wait if empty
+ F1A3 9605                      LDA  UARTDATA     ;; get a character
+ F1A5 39                        RTS
+ 
+                      ;=======================================================
+                      ; Get a line from the UART (with echo)
+                      ;   inputs : X points to return buffer
+                      ;   outputs: A contains count of bytes
+                      ;   Echoes to UART.
+                      ;   Terminate line on 0x0D (CR)
+                      ;=======================================================
+ F1A6 BDF19D          GETLE:    JSR  GETC         ;; get next character
+ F1A9 810D                      CMPA #$0D         ;; check for CR
+ F1AB 270B                      BEQ  GLEX         ;; exit if found
+ F1AD 811B                      CMPA #$1B         ;; check for ESC
+ F1AF 2707                      BEQ  GLEX         ;; exit if found
+ F1B1 A780                      STA  ,X+          ;; store the char
+ F1B3 BDF190                    JSR  PUTC         ;; echo          
+ F1B6 20EE                      BRA  GETLE        ;; loop
+ 
+ F1B8 39              GLEX:     RTS
+                       
+                      ;=======================================================
+                      ; Get a line from the UART (no echo)
+                      ;   inputs : X points to return buffer
+                      ;   outputs: A contains count of bytes
+                      ;     Terminate line on 0x0D (CR)
+                      ;     Discard 0x0A (LF)
+                      ;=======================================================
+ F1B9 BDF19D          GETLN:    JSR  GETC         ;; get next character
+ F1BC 810A                      CMPA #$0A         ;; check for LineFeed
+ F1BE 27F9                      BEQ  GETLN        ;; discard if found
+ F1C0 810D                      CMPA #$0D         ;; check for CR
+ F1C2 2704                      BEQ  GLNX         ;; exit if found
+ F1C4 A780                      STA  ,X+          ;; store the char
+ F1C6 20F1                      BRA  GETLN        ;; loop
+ 
+ F1C8 8600            GLNX:     LDA  #0           ;; load A with null
+ F1CA A780                      STA  ,X+          ;; store null char
+ F1CC 39                        RTS
+ 
+                      ;=======================================================
+                      ; Get address
+                      ;=======================================================
+ F1CD 8EF102          GETADDR:  LDX   #BUFFER
+ F1D0 C604                      LDB   #4          ;; loop counter
+ F1D2 8620                      LDA   #$20        ;; put a space
+ F1D4 BDF190                    JSR   PUTC
+ F1D7 BDF19D          GETADD1:  JSR   GETC
+ F1DA BDF190                    JSR   PUTC
+ F1DD BDF276                    JSR   ISDIGIT     ;; check if digit
+ F1E0 240D                      BCC   GETADD2     ;; branch if digit
+ F1E2 BDF26B                    JSR   TOUPPER
+ F1E5 BDF284                    JSR   ISHEX2      ;; check if A-F
+ F1E8 2504                      BCS   GETADDX     ;; return if invalid
+ F1EA 8037                      SUBA  #$37        ;; hex to binary
+ F1EC 2003                      BRA   GETADD3
+ F1EE 39              GETADDX:  RTS
+ F1EF 8030            GETADD2:  SUBA  #$30        ;; digit to binary
+ F1F1 A780            GETADD3:  STA   ,X+
+ F1F3 5A                        DECB
+ F1F4 26E1                      BNE   GETADD1
+ F1F6 8EF102          GETADD4:  LDX   #BUFFER     ;; convert buffer
+ F1F9 A680                      LDA   ,X+
+ F1FB E684                      LDB   ,X
+ F1FD 48                        ASLA              ;; shift upper nibble
+ F1FE 48                        ASLA              ;; x4
+ F1FF 48                        ASLA              ;; x8
+ F200 48                        ASLA              ;; x16
+ F201 3404ABE0                  ABA               ;; combine nibbles
+ F205 301F                      DEX               ;; buffer
+ F207 A780                      STA   ,X+         ;; store to buffer
+ F209 3001                      INX               ;; buffer+2
+ F20B A680                      LDA   ,X+
+ F20D E684                      LDB   ,X
+ F20F 48                        ASLA              ;; shift upper nibble
+ F210 48                        ASLA              ;; x4
+ F211 48                        ASLA              ;; x8
+ F212 48                        ASLA              ;; x16
+ F213 3404ABE0                  ABA               ;; combine nibbles
+ F217 301F                      DEX               ;; buffer+2
+ F219 301F                      DEX               ;; buffer+1
+ F21B A784                      STA   ,X          ;; store to buffer+1
+ F21D 39                        RTS
+ 
+                      ;=======================================================
+                      ; Dump memory
+                      ;=======================================================
+ F21E 8EF019          DUMPMEM:  LDX   #CRLF       ;; print CRLF
+ F221 BDF182                    JSR   PUTS
+ F224 C600                      LDB   #$00        ;; loop counter
+ F226 BEF102          DUMPM2:   LDX   BUFFER      ;; 16-bit address
+ F229 A680                      LDA   ,X+         ;; get memory
+ F22B BFF102                    STX   BUFFER
+ F22E BDF249                    JSR   ITOHEX
+ F231 8EF108                    LDX   #TEMP2      ;; print ASCII hex
+ F234 BDF182                    JSR   PUTS
+ F237 1F984D                    TBA
+ F23A 4A                        DECA
+ F23B 840F                      ANDA  #$0F
+ F23D 2606                      BNE   DUMPM3
+ F23F 8EF019                    LDX   #CRLF       ;; print CRLF
+ F242 BDF182                    JSR   PUTS
+ F245 5A              DUMPM3:   DECB
+ F246 26DE                      BNE   DUMPM2
+ F248 39                        RTS
+ 
+                      ;=======================================================
+                      ; Convert binary to ASCII hex
+                      ;=======================================================
+ F249 3402            ITOHEX:   PSHA              ;; save A
+ F24B BDF25E                    JSR  ITOHC
+ F24E B7F109                    STA  TEMP1        ;; lower nibble
+ F251 3502                      PULA              ;; restore A
+ F253 47                        ASRA              ;; shift upper nibble
+ F254 47                        ASRA
+ F255 47                        ASRA
+ F256 47                        ASRA
+ F257 BDF25E                    JSR  ITOHC
+ F25A B7F108                    STA  TEMP2        ;; upper nibble
+ F25D 39                        RTS
+ 
+                      ;=======================================================
+                      ; Convert binary to ASCII hex (helper)
+                      ;=======================================================
+ F25E 840F            ITOHC     ANDA #$0f         ;; lower nibble
+ F260 810A                      CMPA #10          ;; check if < 10
+ F262 2D04                      BLT  ITOHC1
+ F264 8B37                      ADDA #$37         ;; convert A-F
+ F266 2002                      BRA  ITOHC2
+ F268 8B30            ITOHC1:   ADDA #$30         ;; convert 1-9
+ F26A 39              ITOHC2:   RTS
+ 
+                      ;=======================================================
+                      ; Convert to upper case
+                      ;=======================================================
+ F26B 8161            TOUPPER:  CMPA #'a'         ;; check lower bound
+ F26D 2D06                      BLT  TOUPPX       ;; return if below 'a'
+ F26F 817A                      CMPA #'z'         ;; check upper bound
+ F271 2E02                      BGT  TOUPPX       ;; return if above 'z'
+ F273 8020                      SUBA #32          ;; convert to upper
+ F275 39              TOUPPX:   RTS
+ 
+                      ;=======================================================
+                      ; Check if digit (clear carry bit if digit)
+                      ;=======================================================
+ F276 8130            ISDIGIT:  CMPA #'0'         ;; check lower bound
+ F278 2D07                      BLT  NODIG        ;; return if below '0'
+ F27A 8139                      CMPA #'9'         ;; check upper bound
+ F27C 2E03                      BGT  NODIG        ;; return if above '9'
+ F27E 1CFE                      CLC
+ F280 39                        RTS
+ F281 1A01            NODIG:    SEC
+ F283 39                        RTS
+ 
+                      ;=======================================================
+                      ; Check if hex A-F (clear carry bit if digit)
+                      ;=======================================================
+ F284 8141            ISHEX2:   CMPA #'A'         ;; check lower bound
+ F286 2D07                      BLT  NOHEX2       ;; return if below 'A'
+ F288 8146                      CMPA #'F'         ;; check upper bound
+ F28A 2E03                      BGT  NOHEX2       ;; return if above 'Z'
+ F28C 1CFE                      CLC
+ F28E 39                        RTS
+ F28F 1A01            NOHEX2:   SEC
+ F291 39                        RTS
+ 
+ 
+                      ;=======================================================
+                      ; Wait
+                      ;=======================================================
+ F292 8688            WAIT1:    LDA  #TIME0       ;; initial count
+ F294 9709                      STA  TIMRICL
+ F296 8613                      LDA  #TIME1
+ F298 970A                      STA  TIMRICH
+ F29A 8601                      LDA  #TMSTART     ;; start timer
+ F29C 9708                      STA  TIMRCNTL
+ F29E 9608            WAIT2:    LDA  TIMRSTAT     ;; read status
+ F2A0 8404                      ANDA #TMDONE
+ F2A2 27FA                      BEQ  WAIT2
+ F2A4 39                        RTS
+ 
+ 
+                      ;=======================================================
+                      ;        Vectors
+                      ;=======================================================
+ 
+                                ORG  $FFF8
+ 
+ FFF8 F110                      FDB  START   ;; IRQ
+ FFFA F110                      FDB  START   ;; SWI
+ FFFC F110                      FDB  START   ;; NMI
+ FFFE F110                      FDB  START   ;; RESET
+
+SYMBOL TABLE
+    BANNER 02 F000     BAUD0 00 00E3     BAUD1 00 0078    BUFFER 02 F102
+  CLEARSCR 02 F0F7   CMD_CLR 02 F159  CMD_DUMP 02 F16D  CMD_GOTO 02 F165
+  CMD_HELP 02 F151  CMD_NONE 02 F14B   CMD_OUT 02 F161      CRLF 02 F019
+     DEBUG 00 0000    DUMPM2 02 F226    DUMPM3 02 F245   DUMPMEM 02 F21E
+ FRAMINGERROR 00 0040   GETADD1 02 F1D7   GETADD2 02 F1EF   GETADD3 02 F1F1
+   GETADD4 02 F1F6   GETADDR 02 F1CD   GETADDX 02 F1EE      GETC 02 F19D
+     GETLE 02 F1A6     GETLN 02 F1B9      GLEX 02 F1B8      GLNX 02 F1C8
+   HELPMSG 02 F021     IMASK 00 000D  INITUART 02 F175   ISDIGIT 02 F276
+    ISHEX2 02 F284      ISRC 00 0010     ITOHC 02 F25E    ITOHC1 02 F268
+    ITOHC2 02 F26A    ITOHEX 02 F249      MAIN 02 F120     NODIG 02 F281
+    NOHEX2 02 F28F    OPORTA 00 000C OVERRUNERR 00 0010 PARITYERROR 00 0020
+    PROMPT 02 F01C      PUTC 02 F190   PUTDONE 02 F18D   PUTLOOP 02 F184
+      PUTS 02 F182  RANDCNTL 00 000E  RANDDATA 00 000F  RANDMASK 00 000F
+ RXFIFOFULL 00 0002 RXNOTEMPTY 00 0001   SSTKTOP 00 FEF0     START 02 F110
+     TEMP1 02 F109     TEMP2 02 F108     TIME0 00 0088     TIME1 00 0013
+  TIMRCNTL 00 0008   TIMRICH 00 000A   TIMRICL 00 0009  TIMRSTAT 00 0008
+    TMDONE 00 0004   TMSTART 00 0001    TMSTOP 00 0000   TOUPPER 02 F26B
+    TOUPPX 02 F275 TXFIFOEMPTY 00 0008    TXFULL 02 F192 TXNOTFULL 00 0004
+  UARTBSR0 00 0001  UARTBSR1 00 0002  UARTCNTL 00 0000  UARTDATA 00 0005
+  UARTMASK 00 0004  UARTSTAT 00 0003   UNKNOWN 02 F0E3   USTKTOP 00 FFF0
+     WAIT1 02 F292     WAIT2 02 F29E     ZEROS 02 F10A
+83 SYMBOLS
+
+0 error(s), 0 warning(s)
